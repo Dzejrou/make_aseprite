@@ -65,6 +65,8 @@ The wrapper looks for Aseprite in this order:
 
 ## Usage
 
+### Wrapper script
+
 From this repository:
 
 ```bash
@@ -82,6 +84,33 @@ If you omit arguments:
 
 - `--in` defaults to the current directory
 - `--out` defaults to `out.aseprite`
+
+### Lua script directly through Aseprite
+
+If you want to call Aseprite yourself instead of using the wrapper, run the Lua script with `--script-param` values:
+
+```bash
+aseprite --batch \
+  --script-param in=/path/to/character \
+  --script-param out=/path/to/character/out.aseprite \
+  --script ./make_aseprite.lua
+```
+
+Example:
+
+```bash
+aseprite --batch \
+  --script-param in=characters/ranger_v2 \
+  --script-param out=characters/ranger_v2/ranger.aseprite \
+  --script scripts/make_aseprite.lua
+```
+
+Notes:
+
+- `--script-param in=...` sets the input character directory
+- `--script-param out=...` sets the output `.aseprite` file
+- if omitted, the Lua script defaults to the current directory for input and `out.aseprite` for output
+- the parameters should be passed before `--script`
 
 ## Notes
 
