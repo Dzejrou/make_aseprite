@@ -1,0 +1,121 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+  cat <<'EOF'
+Usage: ./make_aseprite [--in DIRECTORY] [--out FILE]
+
+Options:
+  --in DIRECTORY   Input character directory. Defaults to the current directory.
+  --out FILE       Output .aseprite file. Defaults to out.aseprite.
+  --help           Show this help message.
+
+Environment:
+  ASEPRITE_BIN     Optional explicit path to the Aseprite executable.
+EOF
+}
+
+find_aseprite() {
+  if [ "${ASEPRITE_BIN:-}" ]; then
+    printf '%s\n' "$ASEPRITE_BIN"
+    return 0
+  fi
+
+  if command -v aseprite >/dev/null 2>&1; then
+    command -v aseprite
+    return 0
+  fi
+
+  for candidate in \
+    "$HOME/Applications/Aseprite.app/Contents/MacOS/aseprite" \
+    /Applications/Aseprite.app/Contents/MacOS/aseprite \
+    /Applications/Aseprite.app/Contents/MacOS/Aseprite
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+absolute_dir_path() {
+  case "$1" in
+    /*)
+      CDPATH= cd -- "$1" && pwd -P
+      ;;
+    *)
+      CDPATH= cd -- "$1" && pwd -P
+      ;;
+  esac
+}
+
+absolute_file_path() {
+  file_path="$1"
+  file_dir=$(dirname -- "$file_path")
+  file_name=$(basename -- "$file_path")
+
+  case "$file_dir" in
+    /*)
+      printf '%s/%s\n' "$file_dir" "$file_name"
+      ;;
+    *)
+      printf '%s/%s/%s\n' "$(pwd -P)" "$file_dir" "$file_name"
+      ;;
+  esac
+}
+
+input_dir="."
+output_path="out.aseprite"
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --in)
+      [ "$#" -ge 2 ] || {
+        echo "make_aseprite: missing value for --in" >&2
+        exit 1
+      }
+      input_dir="$2"
+      shift 2
+      ;;
+    --out)
+      [ "$#" -ge 2 ] || {
+        echo "make_aseprite: missing value for --out" >&2
+        exit 1
+      }
+      output_path="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "make_aseprite: unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+aseprite_bin="$(find_aseprite)" || {
+  echo "make_aseprite: could not find Aseprite. Set ASEPRITE_BIN or add 'aseprite' to PATH." >&2
+  exit 1
+}
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+lua_script="$script_dir/scripts/make_aseprite.lua"
+input_dir_abs="$(absolute_dir_path "$input_dir")"
+output_path_abs="$(absolute_file_path "$output_path")"
+
+[ -f "$lua_script" ] || {
+  echo "make_aseprite: missing Lua script at $lua_script" >&2
+  exit 1
+}
+
+exec "$aseprite_bin" --batch \
+  --script-param "in=$input_dir_abs" \
+  --script-param "out=$output_path_abs" \
+  --script "$lua_script"
