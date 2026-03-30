@@ -1,0 +1,188 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+  cat <<'EOF'
+Usage: ./export --in FILE [--out DIRECTORY] [--replace] [--replace-all] [--export LAYER] [--export_group GROUP]
+
+Options:
+  --in FILE         Input .aseprite file. Required.
+  --out DIRECTORY   Output directory. Defaults to the current directory.
+  --replace         Overwrite files that this export writes.
+  --replace-all     Remove exported layer/group directories first, then export.
+  --export LAYER    Export only the named top-level image layer. Repeatable.
+  --export_group GROUP
+                    Export only the named top-level layer group. Repeatable.
+  --help            Show this help message.
+
+Environment:
+  ASEPRITE_BIN      Optional explicit path to the Aseprite executable.
+EOF
+}
+
+find_aseprite() {
+  if [ "${ASEPRITE_BIN:-}" ]; then
+    printf '%s\n' "$ASEPRITE_BIN"
+    return 0
+  fi
+
+  if command -v aseprite >/dev/null 2>&1; then
+    command -v aseprite
+    return 0
+  fi
+
+  for candidate in \
+    "$HOME/Applications/Aseprite.app/Contents/MacOS/aseprite" \
+    /Applications/Aseprite.app/Contents/MacOS/aseprite \
+    /Applications/Aseprite.app/Contents/MacOS/Aseprite
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+absolute_file_path() {
+  file_path="$1"
+  file_dir=$(dirname -- "$file_path")
+  file_name=$(basename -- "$file_path")
+
+  case "$file_dir" in
+    /*)
+      printf '%s/%s\n' "$file_dir" "$file_name"
+      ;;
+    *)
+      printf '%s/%s/%s\n' "$(pwd -P)" "$file_dir" "$file_name"
+      ;;
+  esac
+}
+
+absolute_dir_path() {
+  dir_path="$1"
+
+  case "$dir_path" in
+    /*)
+      printf '%s\n' "$dir_path"
+      ;;
+    *)
+      printf '%s/%s\n' "$(pwd -P)" "$dir_path"
+      ;;
+  esac
+}
+
+find_lua_script() {
+  script_name="$1"
+
+  if [ -f "$script_dir/$script_name" ]; then
+    printf '%s\n' "$script_dir/$script_name"
+    return 0
+  fi
+
+  if [ -f "$script_dir/scripts/$script_name" ]; then
+    printf '%s\n' "$script_dir/scripts/$script_name"
+    return 0
+  fi
+
+  return 1
+}
+
+input_path=""
+output_dir="."
+replace=0
+replace_all=0
+export_layers=""
+export_groups=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --in)
+      [ "$#" -ge 2 ] || {
+        echo "export: missing value for --in" >&2
+        exit 1
+      }
+      input_path="$2"
+      shift 2
+      ;;
+    --out)
+      [ "$#" -ge 2 ] || {
+        echo "export: missing value for --out" >&2
+        exit 1
+      }
+      output_dir="$2"
+      shift 2
+      ;;
+    --replace)
+      replace=1
+      shift
+      ;;
+    --replace-all)
+      replace=1
+      replace_all=1
+      shift
+      ;;
+    --export)
+      [ "$#" -ge 2 ] || {
+        echo "export: missing value for --export" >&2
+        exit 1
+      }
+      if [ -n "$export_layers" ]; then
+        export_layers="$export_layers,$2"
+      else
+        export_layers="$2"
+      fi
+      shift 2
+      ;;
+    --export_group)
+      [ "$#" -ge 2 ] || {
+        echo "export: missing value for --export_group" >&2
+        exit 1
+      }
+      if [ -n "$export_groups" ]; then
+        export_groups="$export_groups,$2"
+      else
+        export_groups="$2"
+      fi
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "export: unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+[ -n "$input_path" ] || {
+  echo "export: --in is required" >&2
+  exit 1
+}
+
+aseprite_bin="$(find_aseprite)" || {
+  echo "export: could not find Aseprite. Set ASEPRITE_BIN or add 'aseprite' to PATH." >&2
+  exit 1
+}
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+lua_script="$(find_lua_script export.lua)" || {
+  echo "export: could not locate export.lua relative to $script_dir" >&2
+  exit 1
+}
+input_path_abs="$(absolute_file_path "$input_path")"
+output_dir_abs="$(absolute_dir_path "$output_dir")"
+
+exec "$aseprite_bin" --batch \
+  --script-param "in=$input_path_abs" \
+  --script-param "out=$output_dir_abs" \
+  --script-param "replace=$replace" \
+  --script-param "replace_all=$replace_all" \
+  --script-param "export=$export_layers" \
+  --script-param "export_group=$export_groups" \
+  --script "$lua_script"

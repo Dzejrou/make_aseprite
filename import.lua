@@ -2,83 +2,30 @@
 --
 -- Official Aseprite CLI exposes script arguments through --script-param and
 -- app.params, so the practical invocation is:
---   aseprite --batch --script scripts/make_aseprite.lua \
---     --script-param in=characters/warlock \
---     --script-param out=characters/warlock_v2/warlock.aseprite
+--   aseprite --batch --script-param in=characters/warlock \
+--     --script-param out=characters/warlock_v2/warlock.aseprite \
+--     --script import.lua
 --
 -- Parameters:
 --   in:  input directory, defaults to the launch directory
 --   out: output .aseprite path, defaults to out.aseprite in the launch directory
 
-local DIRECTION_ORDER = {
-  "south",
-  "south-east",
-  "east",
-  "north-east",
-  "north",
-  "north-west",
-  "west",
-  "south-west",
-}
+local SCRIPT_NAME = "import.lua"
+
+local function current_script_dir()
+  local info = debug.getinfo(1, "S")
+  local source = info and info.source or ""
+  if string.sub(source, 1, 1) == "@" then
+    source = string.sub(source, 2)
+  end
+  return app.fs.filePath(source)
+end
+
+local lib = dofile(app.fs.joinPath(current_script_dir(), "lib.lua"))
+local DIRECTION_ORDER = lib.DIRECTION_ORDER
 
 local function fail(message)
-  error("make_aseprite.lua: " .. message, 0)
-end
-
-local function lower(value)
-  return string.lower(value)
-end
-
-local function is_absolute_path(path)
-  if path == nil or path == "" then
-    return false
-  end
-
-  if string.sub(path, 1, 1) == "/" then
-    return true
-  end
-
-  if string.match(path, "^%a:[/\\]") then
-    return true
-  end
-
-  return string.sub(path, 1, 2) == "\\\\"
-end
-
-local function resolve_path(path, default_path)
-  local raw = path
-  if raw == nil or raw == "" then
-    raw = default_path
-  end
-
-  if is_absolute_path(raw) then
-    return app.fs.normalizePath(raw)
-  end
-
-  return app.fs.normalizePath(app.fs.joinPath(app.fs.currentPath, raw))
-end
-
-local function sorted_entries(path)
-  if not app.fs.isDirectory(path) then
-    return {}
-  end
-
-  local entries = app.fs.listFiles(path)
-  table.sort(entries)
-  return entries
-end
-
-local function list_png_files(path)
-  local files = {}
-
-  for _, entry in ipairs(sorted_entries(path)) do
-    local full_path = app.fs.joinPath(path, entry)
-    if app.fs.isFile(full_path) and lower(app.fs.fileExtension(entry)) == "png" then
-      files[#files + 1] = full_path
-    end
-  end
-
-  return files
+  lib.fail(SCRIPT_NAME, message)
 end
 
 local function load_image(path)
@@ -103,7 +50,7 @@ local function collect_animations(input_dir)
   local animations_dir = app.fs.joinPath(input_dir, "animations")
   local animations = {}
 
-  for _, animation_name in ipairs(sorted_entries(animations_dir)) do
+  for _, animation_name in ipairs(lib.sorted_entries(animations_dir)) do
     local animation_path = app.fs.joinPath(animations_dir, animation_name)
     if app.fs.isDirectory(animation_path) then
       local directions = {}
@@ -111,7 +58,7 @@ local function collect_animations(input_dir)
       for _, direction in ipairs(DIRECTION_ORDER) do
         local direction_path = app.fs.joinPath(animation_path, direction)
         if app.fs.isDirectory(direction_path) then
-          local frames = list_png_files(direction_path)
+          local frames = lib.list_png_files(direction_path)
           if #frames > 0 then
             directions[#directions + 1] = {
               name = direction,
@@ -227,18 +174,8 @@ local function populate_animation_group(sprite, animation)
   end
 end
 
-local function make_output_directory(output_path)
-  local output_dir = app.fs.filePath(output_path)
-  if output_dir ~= "" and not app.fs.isDirectory(output_dir) then
-    local ok = app.fs.makeAllDirectories(output_dir)
-    if not ok then
-      fail("could not create output directory: " .. output_dir)
-    end
-  end
-end
-
-local input_dir = resolve_path(app.params["in"], app.fs.currentPath)
-local output_path = resolve_path(app.params["out"], "out.aseprite")
+local input_dir = lib.resolve_path(app.params["in"], app.fs.currentPath)
+local output_path = lib.resolve_path(app.params["out"], "out.aseprite")
 
 if not app.fs.isDirectory(input_dir) then
   fail("input directory does not exist: " .. input_dir)
@@ -256,7 +193,7 @@ for _, animation in ipairs(animations) do
   populate_animation_group(sprite, animation)
 end
 
-make_output_directory(output_path)
+lib.ensure_parent_directory(output_path, SCRIPT_NAME)
 sprite:saveAs(output_path)
 sprite:close()
 print("Saved " .. output_path)
