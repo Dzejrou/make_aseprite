@@ -90,6 +90,30 @@ find_lua_script() {
   return 1
 }
 
+run_aseprite_filtered() {
+  stdout_file=$(mktemp "${TMPDIR:-/tmp}/export.stdout.XXXXXX")
+  stderr_file=$(mktemp "${TMPDIR:-/tmp}/export.stderr.XXXXXX")
+
+  cleanup() {
+    rm -f "$stdout_file" "$stderr_file"
+  }
+
+  trap cleanup EXIT HUP INT TERM
+
+  if "$@" >"$stdout_file" 2>"$stderr_file"; then
+    status=0
+  else
+    status=$?
+  fi
+
+  grep -F -v "handle-pose.lua:58: attempt to index a nil value (local 'dlg')" "$stdout_file" || true
+  grep -F -v "handle-pose.lua:58: attempt to index a nil value (local 'dlg')" "$stderr_file" >&2 || true
+
+  cleanup
+  trap - EXIT HUP INT TERM
+  return "$status"
+}
+
 input_path=""
 output_dir="."
 replace=0
@@ -178,7 +202,7 @@ lua_script="$(find_lua_script export.lua)" || {
 input_path_abs="$(absolute_file_path "$input_path")"
 output_dir_abs="$(absolute_dir_path "$output_dir")"
 
-exec "$aseprite_bin" --batch \
+run_aseprite_filtered "$aseprite_bin" --batch \
   --script-param "in=$input_path_abs" \
   --script-param "out=$output_dir_abs" \
   --script-param "replace=$replace" \
