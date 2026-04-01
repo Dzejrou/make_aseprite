@@ -51,6 +51,8 @@ The generated `.aseprite` file contains:
 - `import.lua`: Aseprite Lua script used by the importer
 - `export`: shell wrapper that exports a matching `.aseprite` file back into directories and PNG frames
 - `export.lua`: Aseprite Lua script used by the exporter
+- `inspect`: shell wrapper that inspects an `.aseprite` file and reports layers, groups, and non-empty frame counts
+- `inspect.lua`: Aseprite Lua script used by the inspector
 - `lib.lua`: shared Aseprite Lua helpers used by both tools
 
 ## Requirements
@@ -173,6 +175,50 @@ Notes:
 - `--script-param replace_all=1` removes exported top-level directories before export
 - `--script-param export=...` and `--script-param export_group=...` accept comma-separated names
 - if no `export` / `export_group` filters are provided, the exporter writes all top-level image layers and groups
+
+### Inspect wrapper
+
+The inspector reads an `.aseprite` file and reports:
+
+- top-level image layers
+- top-level layer groups
+- child layers/groups recursively inside groups
+- counts of non-empty frames for image layers
+- totals of non-empty child cels for groups
+
+By "non-empty", it means a cel exists and its image is not fully transparent, which matches what the exporter would actually write.
+
+Usage:
+
+```bash
+./inspect --in /path/to/character.aseprite
+./inspect --in /path/to/character.aseprite --json
+./inspect --in /path/to/character.aseprite --layer base
+./inspect --in /path/to/character.aseprite --group attack
+```
+
+Inspector flags:
+
+- `--json` outputs machine-readable JSON
+- `--layer <name>` filters to named top-level image layers; repeatable
+- `--group <name>` filters to named top-level layer groups; repeatable
+
+### Inspect Lua script directly through Aseprite
+
+```bash
+aseprite --batch \
+  --script-param in=/path/to/character.aseprite \
+  --script-param json=1 \
+  --script-param layer=base \
+  --script-param group=attack \
+  --script ./inspect.lua
+```
+
+Notes:
+
+- `--script-param json=1` enables JSON output
+- `--script-param layer=...` and `--script-param group=...` accept comma-separated names
+- if no filters are provided, the inspector reports all top-level image layers and groups
 
 ## Notes
 

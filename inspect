@@ -1,0 +1,154 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+  cat <<'EOF'
+Usage: ./inspect --in FILE [--json] [--layer LAYER] [--group GROUP]
+
+Options:
+  --in FILE       Input .aseprite file. Required.
+  --json          Output JSON.
+  --layer LAYER   Inspect only the named top-level image layer. Repeatable.
+  --group GROUP   Inspect only the named top-level layer group. Repeatable.
+  --help          Show this help message.
+
+Environment:
+  ASEPRITE_BIN    Optional explicit path to the Aseprite executable.
+EOF
+}
+
+find_aseprite() {
+  if [ "${ASEPRITE_BIN:-}" ]; then
+    printf '%s\n' "$ASEPRITE_BIN"
+    return 0
+  fi
+
+  if command -v aseprite >/dev/null 2>&1; then
+    command -v aseprite
+    return 0
+  fi
+
+  for candidate in \
+    "$HOME/Applications/Aseprite.app/Contents/MacOS/aseprite" \
+    /Applications/Aseprite.app/Contents/MacOS/aseprite \
+    /Applications/Aseprite.app/Contents/MacOS/Aseprite
+  do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+absolute_file_path() {
+  file_path="$1"
+  file_dir=$(dirname -- "$file_path")
+  file_name=$(basename -- "$file_path")
+
+  case "$file_dir" in
+    /*)
+      printf '%s/%s\n' "$file_dir" "$file_name"
+      ;;
+    *)
+      printf '%s/%s/%s\n' "$(pwd -P)" "$file_dir" "$file_name"
+      ;;
+  esac
+}
+
+find_lua_script() {
+  script_name="$1"
+
+  if [ -f "$script_dir/$script_name" ]; then
+    printf '%s\n' "$script_dir/$script_name"
+    return 0
+  fi
+
+  if [ -f "$script_dir/scripts/$script_name" ]; then
+    printf '%s\n' "$script_dir/scripts/$script_name"
+    return 0
+  fi
+
+  return 1
+}
+
+input_path=""
+json_output=0
+layers=""
+groups=""
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --in)
+      [ "$#" -ge 2 ] || {
+        echo "inspect: missing value for --in" >&2
+        exit 1
+      }
+      input_path="$2"
+      shift 2
+      ;;
+    --json)
+      json_output=1
+      shift
+      ;;
+    --layer)
+      [ "$#" -ge 2 ] || {
+        echo "inspect: missing value for --layer" >&2
+        exit 1
+      }
+      if [ -n "$layers" ]; then
+        layers="$layers,$2"
+      else
+        layers="$2"
+      fi
+      shift 2
+      ;;
+    --group)
+      [ "$#" -ge 2 ] || {
+        echo "inspect: missing value for --group" >&2
+        exit 1
+      }
+      if [ -n "$groups" ]; then
+        groups="$groups,$2"
+      else
+        groups="$2"
+      fi
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "inspect: unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+[ -n "$input_path" ] || {
+  echo "inspect: --in is required" >&2
+  exit 1
+}
+
+aseprite_bin="$(find_aseprite)" || {
+  echo "inspect: could not find Aseprite. Set ASEPRITE_BIN or add 'aseprite' to PATH." >&2
+  exit 1
+}
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+lua_script="$(find_lua_script inspect.lua)" || {
+  echo "inspect: could not locate inspect.lua relative to $script_dir" >&2
+  exit 1
+}
+input_path_abs="$(absolute_file_path "$input_path")"
+
+exec "$aseprite_bin" --batch \
+  --script-param "in=$input_path_abs" \
+  --script-param "json=$json_output" \
+  --script-param "layer=$layers" \
+  --script-param "group=$groups" \
+  --script "$lua_script"
